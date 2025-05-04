@@ -1,0 +1,71 @@
+static_resources:
+  listeners:
+    - name: listener_0
+      address:
+        socket_address:
+          address: 0.0.0.0
+          port_value: ${ENVOY_PORT}
+      filter_chains:
+        - filters:
+            - name: envoy.filters.network.http_connection_manager
+              typed_config:
+                "@type": type.googleapis.com/envoy.extensions.filters.network.http_connection_manager.v3.HttpConnectionManager
+                stat_prefix: ingress_http
+                route_config:
+                  name: local_route
+                  virtual_hosts:
+                    - name: local_service
+                      domains: ["*"]
+                      routes:
+                        - match:
+                            prefix: "/"
+                          route:
+                            cluster: app
+                http_filters:
+                  - name: envoy.filters.http.ext_authz
+                    typed_config:
+                      "@type": type.googleapis.com/envoy.extensions.filters.http.ext_authz.v3.ExtAuthz
+                      transport_api_version: V3
+                      http_service:
+                        server_uri:
+                          uri: ${EZSSO_OIDC_AUTHORIZE_URI}
+                          cluster: ext_authz
+                          timeout: 0.5s
+                        authorization_request:
+                          headers_to_add:
+                            - header:
+                                key: ezsso-oidc-auth-id
+                                value: ${EZSSO_OIDC_AUTH_ID}
+                  - name: envoy.filters.http.router
+                    typed_config:
+                      "@type": type.googleapis.com/envoy.extensions.filters.http.router.v3.Router
+
+  clusters:
+    - name: app
+      connect_timeout: 0.5s
+      type: strict_dns
+      lb_policy: round_robin
+      load_assignment:
+        cluster_name: app
+        endpoints:
+          - lb_endpoints:
+              - endpoint:
+                  address:
+                    socket_address:
+                      address: 127.0.0.1
+                      port_value: ${APP_PORT}
+
+    - name: ext_authz
+      connect_timeout: 0.5s
+      type: strict_dns
+      lb_policy: round_robin
+      load_assignment:
+        cluster_name: ext_authz
+        endpoints:
+          - lb_endpoints:
+              - endpoint:
+                  address:
+                    socket_address:
+                      address: ${EZSSO_OIDC_AUTHORIZE_HOST}
+                      port_value: ${EZSSO_OIDC_AUTHORIZE_HOST}
+
